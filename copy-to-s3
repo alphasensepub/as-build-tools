@@ -1,7 +1,9 @@
 #!/bin/bash
 
+set -e
+
 missing_tools=
-for tool in xmllint basename; do
+for tool in xmllint basename dirname; do
     if ! type -p "$tool" >/dev/null 2>&1; then
         if [ -z "$missing_tools" ] ; then
             missing_tools="$tool"
@@ -44,8 +46,8 @@ while [ $arg_index -lt $# ] ; do
             s3bucket=$value
             arg_index=$(expr $arg_index + 1)
             ;;
-        "--s3key" )
-            s3key=$value
+        "--s3dirkey" )
+            s3dirkey=$value
             arg_index=$(expr $arg_index + 1)
             ;;
         "--copyArtifact" )
@@ -59,16 +61,12 @@ while [ $arg_index -lt $# ] ; do
 done
 
 missing_arguments=false
-if [[ -z $copy_artifact ]]; then
-    echo "Mandatory parameter missing: --copyArtifact"
-    missing_arguments=true
-fi
 if [[ -z $s3bucket ]]; then
-    echo "Mandatory parameter missing: --s3bucket"
+    echo "ERROR: Mandatory parameter missing: --s3bucket"
     missing_arguments=true
 fi
-if [[ -z $s3key ]]; then
-    echo "Mandatory parameter missing: --s3key"
+if [[ -z $s3dirkey ]]; then
+    echo "ERROR: Mandatory parameter missing: --s3dirkey"
     missing_arguments=true
 fi
 if [[ $missing_arguments = true ]]; then
@@ -76,10 +74,10 @@ if [[ $missing_arguments = true ]]; then
 fi
 
 if [[ -z $version_pom && -n $artifact_id_pom ]]; then
-    echo "You must specify also --versionPom if you specify --artifactIdPom"
+    echo "ERROR: You must specify also --versionPom if you specify --artifactIdPom"
     exit 5
 elif [[ -z $artifact_id_pom && -n $version_pom ]]; then
-    echo "You must specify also --artifactIdPom if you specify --versionPom"
+    echo "ERROR: You must specify also --artifactIdPom if you specify --versionPom"
     exit 5
 fi
 if [[ -n $version_pom ]]; then
@@ -96,12 +94,22 @@ else
     elif [[ -z $artifact_id && -n $version ]]; then
         echo "You must specify also --artifactId if you specify --version"
         exit 5
+    elif [[ -z $artifact_id && -z $version ]]; then
+        echo "ERROR: No --artifact_id or --version specified"
+        exit 5
     fi
 fi
 
-echo "copy_artifact = ${copy_artifact}"
-echo "s3bucket = ${s3bucket}"
-echo "s3key = ${s3key}"
+if [[ -z $copy_artifact ]]; then
+    copy_artifact="$(dirname ${artifact_id_pom})/target/${artifact_id}-${version}.jar"
+    echo "Flag --copyArtifact not specified, defaulting to ${copy_artifact}"
+    missing_arguments=true
+fi
 
-printf "Copying ${copy_artifact} to s3://${s3bucket}/${s3key}/$(basename ${copy_artifact})..."
+#echo "copy_artifact = ${copy_artifact}"
+#echo "s3bucket = ${s3bucket}"
+#echo "s3dirkey = ${s3dirkey}"
+
+printf "Copying ${copy_artifact} to s3://${s3bucket}/${s3dirkey}/$(basename ${copy_artifact})..."
+$(dirname $0)/multipart.js --bucket=${s3bucket} --s3_key=${s3dirkey}/$(basename ${copy_artifact}) --file_name=${copy_artifact}
 echo ok
