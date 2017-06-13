@@ -1,0 +1,107 @@
+#!/bin/bash
+
+missing_tools=
+for tool in xmllint basename; do
+    if ! type -p "$tool" >/dev/null 2>&1; then
+        if [ -z "$missing_tools" ] ; then
+            missing_tools="$tool"
+        else
+            missing_tools="$missing_tools
+$tool"
+        fi
+    fi
+done
+
+if [ -n "$missing_tools" ] ; then
+    echo "ERROR: required tools missing: $missing_tools" 1>&2
+    exit 10
+fi
+
+arg_index=0
+while [ $arg_index -lt $# ] ; do
+    arg_index=$(expr $arg_index + 1)
+    arg=$(eval "echo \${$(expr $arg_index)}")
+    value=$(eval "echo \${$(expr $arg_index + 1)}")
+
+    case "$arg" in 
+        "--version" )
+            version=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--artifactId" )
+            artifact_id=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--versionPom" )
+            version_pom=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--artifactIdPom" )
+            artifact_id_pom=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--s3bucket" )
+            s3bucket=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--s3key" )
+            s3key=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        "--copyArtifact" )
+            copy_artifact=$value
+            arg_index=$(expr $arg_index + 1)
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            ;;
+    esac
+done
+
+missing_arguments=false
+if [[ -z $copy_artifact ]]; then
+    echo "Mandatory parameter missing: --copyArtifact"
+    missing_arguments=true
+fi
+if [[ -z $s3bucket ]]; then
+    echo "Mandatory parameter missing: --s3bucket"
+    missing_arguments=true
+fi
+if [[ -z $s3key ]]; then
+    echo "Mandatory parameter missing: --s3key"
+    missing_arguments=true
+fi
+if [[ $missing_arguments = true ]]; then
+    exit 5
+fi
+
+if [[ -z $version_pom && -n $artifact_id_pom ]]; then
+    echo "You must specify also --versionPom if you specify --artifactIdPom"
+    exit 5
+elif [[ -z $artifact_id_pom && -n $version_pom ]]; then
+    echo "You must specify also --artifactIdPom if you specify --versionPom"
+    exit 5
+fi
+if [[ -n $version_pom ]]; then
+    printf "Parsing artifactId from ${artifact_id_pom}..."
+    artifact_id=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='artifactId']/text()" ${artifact_id_pom})
+    echo $artifact_id
+    printf "Parsing version from ${version_pom}..."
+    version=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" ${version_pom})
+    echo ${version}
+else
+    if [[ -z $version && -n $artifact_id ]]; then
+        echo "You must specify also --version if you specify --artifactId"
+        exit 5
+    elif [[ -z $artifact_id && -n $version ]]; then
+        echo "You must specify also --artifactId if you specify --version"
+        exit 5
+    fi
+fi
+
+echo "copy_artifact = ${copy_artifact}"
+echo "s3bucket = ${s3bucket}"
+echo "s3key = ${s3key}"
+
+printf "Copying ${copy_artifact} to s3://${s3bucket}/${s3key}/$(basename ${copy_artifact})..."
+echo ok
